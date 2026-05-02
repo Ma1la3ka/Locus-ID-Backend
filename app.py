@@ -23,8 +23,9 @@ load_dotenv()
 app = Flask(__name__)
 
 CORS(app, resources={r"/*": {"origins": [
-                                        "http://127.0.0.1:5501",
-                                         "https://locus-id-frontend.vercel.app/"]
+                                         "https://locus-id-frontend.vercel.app/",
+                                        "http://127.0.0.1:5501"
+                                        ]
                                          }},
      supports_credentials=True,
      methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],
