@@ -22,15 +22,28 @@ load_dotenv()
 
 app = Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": [
-                                         "https://locus-id-frontend.vercel.app/",
-                                        "http://127.0.0.1:5501"
-                                        ]
-                                         }},
+ALLOWED_ORIGINS = [
+    "https://locus-id-frontend.vercel.app",   # ← NO trailing slash
+    "http://127.0.0.1:5501",
+    "http://localhost:5501",
+]
+ 
+CORS(app,
+     resources={r"/*": {"origins": ALLOWED_ORIGINS}},
      supports_credentials=True,
      methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
-
+ 
+ 
+@app.after_request
+def after_request(response):
+    origin = request.headers.get("Origin", "")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"]      = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,PUT,POST,DELETE,OPTIONS"
+    return response
 DB_CONFIG = {
     "host":     os.getenv("DB_HOST"),
     "user":     os.getenv("DB_USER"),
