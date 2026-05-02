@@ -59,11 +59,6 @@ ALLOWED_FACULTIES = {
     ]
 }
 
-# frame_lock      = threading.Lock()
-# camera          = cv2.VideoCapture(0)
-# latest_frame    = None
-# face_is_aligned = False
-
 def preprocess_image(file_path):
     """Brighten + sharpen a saved JPEG so DeepFace has an easier time."""
     img = cv2.imread(file_path)
@@ -101,57 +96,6 @@ def validate_faculty_dept(faculty, department):
         return False, f"Invalid department: '{department}' does not belong to '{faculty}'."
     return True, None
 
-def gen_frames():
-    global latest_frame, camera, face_is_aligned
-    center_x, center_y, radius = 320, 240, 170
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    )
-    while True:
-        if not camera or not camera.isOpened():
-            time.sleep(0.1)
-            continue
-        success, frame = camera.read()
-        if not success:
-            break
-        frame = cv2.flip(frame, 1)
-        with frame_lock:
-            latest_frame = frame.copy()
-        display = frame.copy()
-        small   = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-        gray    = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-        faces   = face_cascade.detectMultiScale(gray, 1.1, 5)
-        color, aligned = (0, 0, 255), False
-        if len(faces) > 0:
-            x, y, w, h = [v * 4 for v in faces[0]]
-            if math.sqrt((x + w // 2 - center_x) ** 2 + (y + h // 2 - center_y) ** 2) < 60:
-                color, aligned = (0, 255, 0), True
-        face_is_aligned = aligned
-        cv2.circle(display, (center_x, center_y), radius, color, 3)
-        ret, buf = cv2.imencode('.jpg', display)
-        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
-        time.sleep(0.03)
-
-
-# @app.route('/video_feed')
-# def video_feed():
-#     global camera
-#     if camera is None or not camera.isOpened():
-#         camera = cv2.VideoCapture(0)
-#     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-# @app.route('/check_alignment')
-# def check_alignment():
-#     return jsonify({"aligned": face_is_aligned})
-
-
-# @app.route('/shutdown_camera', methods=['POST'])
-# def shutdown_camera():
-#     global camera
-#     if camera and camera.isOpened():
-#         camera.release()
-#     return jsonify({"status": "camera_off"})
 
 @app.route('/get_faculties', methods=['GET'])
 def get_faculties():
@@ -1061,16 +1005,6 @@ def delete_notification(notif_id):
 @app.errorhandler(404)
 def resource_not_found(e):
     return jsonify(error=str(e)), 404
-
-
-# def signal_handler(sig, frame):
-#     global camera
-#     if camera and camera.isOpened():
-#         camera.release()
-#     sys.exit(0)
-
-
-# signal.signal(signal.SIGINT, signal_handler)
 
 if __name__ == '__main__':
     import os
