@@ -1,3 +1,9 @@
+import os
+os.environ["DEEPFACE_BACKEND"] = "torch"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS, cross_origin
 import cv2
@@ -13,6 +19,7 @@ import csv
 import math
 import re
 import numpy as np
+
 from datetime import datetime
 from deepface import DeepFace
 from scipy.spatial import distance as dst
