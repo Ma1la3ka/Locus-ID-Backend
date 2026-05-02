@@ -1,7 +1,7 @@
-import os
-os.environ["DEEPFACE_BACKEND"] = "torch"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+# import os
+# os.environ["DEEPFACE_BACKEND"] = "torch"
+# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+# os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 
 from flask import Flask, request, jsonify, Response
@@ -19,10 +19,15 @@ import csv
 import math
 import re
 import numpy as np
+import mediapipe as mp
+
+_mp_face   = mp.solutions.face_detection
+_detector  = _mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.5)
+_det_lock  = __import__('threading').Lock()
 
 from datetime import datetime
 from deepface import DeepFace
-from scipy.spatial import distance as dst
+# from scipy.spatial import distance as dst
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -79,21 +84,89 @@ ALLOWED_FACULTIES = {
     ]
 }
 
-def preprocess_image(file_path):
-    """Brighten + sharpen a saved JPEG so DeepFace has an easier time."""
-    img = cv2.imread(file_path)
-    if img is None:
-        return file_path
-    img = cv2.convertScaleAbs(img, alpha=1.3, beta=20)
-    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    img = cv2.filter2D(img, -1, kernel)
-    h, w = img.shape[:2]
-    if w < 300:
-        img = cv2.resize(img, (300, int(h * 300 / w)))
-    cv2.imwrite(file_path, img)
-    return file_path
+# def preprocess_image(file_path):
+#     """Brighten + sharpen a saved JPEG so DeepFace has an easier time."""
+#     img = cv2.imread(file_path)
+#     if img is None:
+#         return file_path
+# #     img = cv2.convertScaleAbs(img, alpha=1.3, beta=20)
+# #     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+# #     img = cv2.filter2D(img, -1, kernel)
+# #     h, w = img.shape[:2]
+# #     if w < 300:
+# #         img = cv2.resize(img, (300, int(h * 300 / w)))
+# #     cv2.imwrite(file_path, img)
+# #     return file_path
+
+# # def detect_face(image_path: str) -> bool:
+# #     """Returns True if exactly one face is found in the image."""
+# #     img = cv2.imread(image_path)
+# #     if img is None:
+# #         return False
+# #     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+# #     with _det_lock:
+# #         result = _detector.process(rgb)
+# #     return bool(result.detections)
 
 
+# def compare_faces(stored_path: str, live_path: str) -> tuple[bool, float]:
+#     """
+#     Compare two face images using histogram correlation.
+#     Returns (matched: bool, score: float 0-100)
+#     Score >= 70 = match.
+#     Uses HSV histogram on the face ROI for lighting robustness.
+#     """
+#     def get_face_histogram(image_path):
+#         img = cv2.imread(image_path)
+#         if img is None:
+#             return None
+#         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#         with _det_lock:
+#             result = _detector.process(rgb)
+#         if not result.detections:
+#             return None
+#         # Crop to face bounding box
+#         h, w = img.shape[:2]
+#         det  = result.detections[0].location_data.relative_bounding_box
+#         x1   = max(0, int(det.xmin * w))
+#         y1   = max(0, int(det.ymin * h))
+#         x2   = min(w, int((det.xmin + det.width)  * w))
+#         y2   = min(h, int((det.ymin + det.height) * h))
+#         face = img[y1:y2, x1:x2]
+#         if face.size == 0:
+#             return None
+#         face_resized = cv2.resize(face, (128, 128))
+#         hsv  = cv2.cvtColor(face_resized, cv2.COLOR_BGR2HSV)
+#         hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
+#         cv2.normalize(hist, hist)
+#         return hist
+
+#     hist1 = get_face_histogram(stored_path)
+#     hist2 = get_face_histogram(live_path)
+
+#     if hist1 is None or hist2 is None:
+#         return False, 0.0
+
+#     # Correlation: 1.0 = identical, 0.0 = no match
+#     score     = cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+#     score_pct = max(0.0, score) * 100
+#     print(f"[FACE COMPARE] Histogram correlation: {score:.4f} ({score_pct:.1f}%)")
+#     return score_pct >= 70, score_pct
+
+def get_face_status(image_path):
+    """Checks if a valid face exists for Registration."""
+    img = cv2.imread(image_path)
+    if img is None: return False, "Invalid Image"
+    
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = detector.process(rgb)
+    
+    if not results.detections:
+        return False, "No face detected"
+    if len(results.detections) > 1:
+        return False, "Multiple faces detected - only one allowed"
+    
+    return True, "Success"
 def haversine(lat1, lon1, lat2, lon2):
     """Returns distance in metres between two GPS coordinates."""
     R = 6371000
@@ -105,11 +178,6 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 def validate_faculty_dept(faculty, department):
-    """
-    Returns (True, None) if the pair is valid.
-    Returns (False, error_message) otherwise.
-    Called by both /register and /register_with_face.
-    """
     if faculty not in ALLOWED_FACULTIES:
         return False, f"Invalid faculty: '{faculty}'. Not a recognised faculty."
     if department not in ALLOWED_FACULTIES[faculty]:
@@ -197,6 +265,17 @@ def register_user():
     finally:
         if db:
             db.close()
+
+def preprocess_image(image_path):
+    """Adjusts image contrast and brightness to help AI detection."""
+    img = cv2.imread(image_path)
+    if img is not None:
+        # Applying a simple contrast adjustment (Alpha) and brightness (Beta)
+        # Higher alpha (1.0-3.0) = more contrast; Beta (0-100) = more brightness
+        adjusted = cv2.convertScaleAbs(img, alpha=1.2, beta=10)
+        cv2.imwrite(image_path, adjusted)
+        return True
+    return False
 #  REGISTRATION WITH FACE CAPTURE (Students)
 @app.route('/register_with_face', methods=['POST', 'OPTIONS'])
 def register_with_face():
@@ -222,18 +301,19 @@ def register_with_face():
 
         if not user_id.startswith("STU-"):
             return jsonify({"status": "error", "message": "Student ID must start with 'STU-'."})
+
         # ── B. SECURITY: validate faculty & dept server-side ─
         valid, err = validate_faculty_dept(faculty, department)
         if not valid:
             return jsonify({"status": "error", "message": err})
 
-        
         face_file = request.files.get('face')
         if not face_file:
             return jsonify({"status": "error", "message": "Face image is required for registration."})
 
+        # ── C. Decode Image for Processing ──
         file_bytes = np.frombuffer(face_file.read(), np.uint8)
-        img        = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        img         = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"status": "error", "message": "Could not decode face image. Please try again."})
 
@@ -249,32 +329,39 @@ def register_with_face():
         filename   = f"{safe_id}.jpg"
         photo_path = os.path.join(FACE_PHOTOS_DIR, filename)
         cv2.imwrite(photo_path, img)
-        print(f"[REG_FACE] Saved: {photo_path}")
 
         # ── F. Preprocess (brighten/sharpen) ──────────────
         preprocess_image(photo_path)
 
-        # ── G. Confirm DeepFace can detect a face ─────────
+        # ── G. Confirm MediaPipe can detect exactly one face ─────────
+        # Convert BGR to RGB for MediaPipe
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Use the global detector with a thread lock for stability
+        with _det_lock:
+            results = _detector.process(rgb_img)
+
         detected = False
-        for backend in ["opencv", "ssd"]:
-            try:
-                DeepFace.represent(
-                    img_path         = photo_path,
-                    model_name       = "VGG-Face",
-                    enforce_detection= True,
-                    detector_backend = backend
-                )
+        if results.detections:
+            num_faces = len(results.detections)
+            if num_faces == 1:
                 detected = True
-                break
-            except ValueError:
-                continue
+            else:
+                # Security: Prevent multiple people in registration photo
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Detected {num_faces} faces. Please ensure only you are in the frame."
+                })
 
         if not detected:
+            # Cleanup if detection fails
             if os.path.exists(photo_path):
                 os.remove(photo_path)
             return jsonify({
                 "status":  "error",
-                "message": "No face detected in your photo. Ensure good lighting and face the camera directly."
+                "message": "No face detected. Ensure good lighting and look directly at the camera."
             })
 
         # ── H. Insert into DB with full photo_path ─────────
@@ -290,7 +377,7 @@ def register_with_face():
         return jsonify({"status": "success", "message": f"Registration complete! Welcome, {f_name}."})
 
     except Exception as e:
-        # Clean up orphaned photo if DB write failed
+        # Clean up orphaned photo if any error occurs
         if photo_path and os.path.exists(photo_path):
             os.remove(photo_path)
         print(f"[REG_FACE ERROR] {e}")
@@ -298,8 +385,6 @@ def register_with_face():
     finally:
         if db:
             db.close()
-
-
 #  LOGIN
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
@@ -381,15 +466,15 @@ def check_distance():
     finally:
         db.close()
 
-#  ATTENDANCE — STEP 2: Face verification + record insert
-
+# ATTENDANCE — STEP 2: Face verification + record insert
 @app.route('/verify_face_attendance', methods=['POST', 'OPTIONS'])
 def verify_face_attendance():
     if request.method == 'OPTIONS':
         return jsonify({"status": "ok"}), 200
 
-    uid  = request.form.get('userId',     '').strip()
+    uid  = request.form.get('userId',     '').strip().upper() # Ensure case matching
     code = request.form.get('courseCode', '').strip()
+    
     try:
         student_lat = float(request.form.get('lat', 0))
         student_lng = float(request.form.get('lng', 0))
@@ -400,25 +485,26 @@ def verify_face_attendance():
     if not face_file:
         return jsonify({"status": "error", "message": "No face image received."}), 400
 
-    # Decode live image
+    # 1. Decode live image for processing
     file_bytes = np.frombuffer(face_file.read(), np.uint8)
     live_img   = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     if live_img is None:
         return jsonify({"status": "error", "message": "Could not decode face image."}), 400
 
-    # Write live image to a temp file, preprocess it
+    # 2. Write live image to a temp file (Memory check: only 1 temp file per user)
     temp_path = os.path.join(FACE_PHOTOS_DIR, f"temp_attend_{uid}.jpg")
     cv2.imwrite(temp_path, live_img)
-    preprocess_image(temp_path)
+    
+    # Optional: preprocess_image(temp_path) - only if defined
 
     db = None
     try:
         db = pymysql.connect(**DB_CONFIG)
         with db.cursor(pymysql.cursors.DictCursor) as c:
 
-            # 1. Re-confirm session is still active + re-check distance
+            # --- A. Session & Geofencing Check ---
             c.execute(
-                "SELECT id,lat,lng FROM attendance_sessions WHERE course_code=%s AND status='Active'",
+                "SELECT id, lat, lng FROM attendance_sessions WHERE course_code=%s AND status='Active'",
                 (code,)
             )
             session = c.fetchone()
@@ -427,10 +513,10 @@ def verify_face_attendance():
 
             if session['lat'] and session['lng']:
                 dist = haversine(student_lat, student_lng, float(session['lat']), float(session['lng']))
-                if dist > 150:
-                    return jsonify({"status": "error", "message": f"Location check failed — {int(dist)}m away."})
+                if dist > 150: # 150 meters limit
+                    return jsonify({"status": "error", "message": f"Location check failed — {int(dist)}m away from lecture hall."})
 
-            # 2. Duplicate attendance check
+            # --- B. Duplicate Check ---
             c.execute(
                 "SELECT id FROM attendance_records WHERE student_id=%s AND session_id=%s",
                 (uid, session['id'])
@@ -438,51 +524,41 @@ def verify_face_attendance():
             if c.fetchone():
                 return jsonify({"status": "error", "message": "Attendance already marked for this session."})
 
-            # 3. Load registered face photo path
+            # --- C. Load Registered Face Path ---
             c.execute("SELECT photo_path FROM students WHERE student_id=%s", (uid,))
             row = c.fetchone()
-            if not row or not row['photo_path'] or row['photo_path'] == 'no_photo_yet.jpg':
-                return jsonify({
-                    "status":  "error",
-                    "message": "No face registered for this student. Please re-register."
-                })
+            if not row or not row['photo_path']:
+                return jsonify({"status": "error", "message": "No face registered for this student."})
 
             registered_path = row['photo_path']
             if not os.path.exists(registered_path):
-                return jsonify({
-                    "status":  "error",
-                    "message": "Stored face photo not found on server. Please re-register."
-                })
+                return jsonify({"status": "error", "message": "Registered photo missing on server."})
 
-            # 4. DeepFace verification
+            # --- D. MEMORY-SAFE Face Verification ---
             try:
+                # CTO Tip: SFace + MediaPipe uses minimal RAM compared to VGG-Face
                 result = DeepFace.verify(
-                    img1_path        = registered_path,
-                    img2_path        = temp_path,
-                    model_name       = "VGG-Face",
-                    detector_backend = "opencv",
-                    enforce_detection= False
+                    img1_path = registered_path,
+                    img2_path = temp_path,
+                    model_name = "SFace", 
+                    detector_backend = "mediapipe",
+                    enforce_detection = True # Better security for attendance
                 )
-                verified  = result.get("verified",  False)
-                distance  = result.get("distance",  1.0)
-                threshold = result.get("threshold", 0.40)
-
-                print(f"[FACE] {uid} | verified={verified} | dist={distance:.3f} | threshold={threshold:.3f}")
+                
+                verified = result.get("verified", False)
+                distance = result.get("distance", 1.0)
 
                 if not verified:
                     return jsonify({
                         "status":  "face_mismatch",
-                        "message": f"Face does not match (distance={distance:.2f}). Try again in better lighting."
+                        "message": "Face does not match. Please ensure good lighting."
                     })
 
             except Exception as face_err:
-                print(f"[DEEPFACE ERROR] {face_err}")
-                return jsonify({
-                    "status":  "error",
-                    "message": "Face verification error. Look directly at the camera and try again."
-                })
+                print(f"[FACE_VERIFY ERROR] {face_err}")
+                return jsonify({"status": "error", "message": "Could not detect face. Look directly at the camera."})
 
-            # 5. All checks passed — record attendance
+            # --- E. All checks passed — Record Attendance ---
             c.execute(
                 "INSERT INTO attendance_records (student_id, session_id, course_code, timestamp) VALUES (%s,%s,%s,NOW())",
                 (uid, session['id'], code)
@@ -491,13 +567,14 @@ def verify_face_attendance():
 
             return jsonify({
                 "status":  "success",
-                "message": f"Identity confirmed. Attendance marked for {code}!"
+                "message": f"Verification successful. Attendance marked for {code}!"
             })
 
     except Exception as e:
-        print(f"[VERIFY_FACE_ATTENDANCE ERROR] {e}")
+        print(f"[SERVER ERROR] {e}")
         return jsonify({"status": "error", "message": "Internal server error."}), 500
     finally:
+        # Crucial for Halcyon: Clean up temp files immediately to save disk/RAM
         if os.path.exists(temp_path):
             os.remove(temp_path)
         if db:
@@ -1025,6 +1102,13 @@ def delete_notification(notif_id):
 @app.errorhandler(404)
 def resource_not_found(e):
     return jsonify(error=str(e)), 404
+
+# Pre-load the lightweight model to prevent timeout during demo
+try:
+    DeepFace.build_model("SFace")
+    print("AI Model SFace loaded successfully.")
+except Exception as e:
+    print(f"Model pre-load warning: {e}")
 
 if __name__ == '__main__':
     import os
