@@ -1,3 +1,12 @@
+
+import os
+from deepface import DeepFace
+try:
+    DeepFace.build_model("SFace")
+    print("SFace Model loaded and ready.")
+except Exception as e:
+    print(f"Model pre-load warning: {e}")
+    
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS, cross_origin
 import cv2
@@ -302,7 +311,7 @@ def register_with_face():
             try:
                 DeepFace.represent(
                     img_path=photo_path,
-                    model_name="VGG-Face",
+                    model_name="SFace",
                     enforce_detection=True,
                     detector_backend=backend
                 )
@@ -514,7 +523,7 @@ def verify_face_attendance():
                 result = DeepFace.verify(
                     img1_path        = registered_path,
                     img2_path        = temp_path,
-                    model_name       = "VGG-Face",
+                    model_name       = "SFace",
                     detector_backend = "opencv",
                     enforce_detection= False
                 )
