@@ -1,0 +1,39 @@
+# --- Secrets and Environment Variables ---
+# Never push your real passwords to GitHub
+.env
+.env.local
+
+# --- LOCUS-ID Specific (Biometric Data) ---
+# Ignore actual images of students/faces to keep the repo light
+# This prevents your private test images from going public
+captured_faces/*
+student_faces/*
+
+# Allow the folders themselves to be tracked if they contain a .gitkeep file
+!captured_faces/.gitkeep
+!student_faces/.gitkeep
+
+# --- Python Specific ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# --- Database ---
+# Ignore local database dumps or SQLite files
+*.sql
+*.sqlite
+*.sqlite3
+
+# --- OS / IDE Specific ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
