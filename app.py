@@ -24,7 +24,7 @@ app = Flask(__name__)
 
 CORS(app, resources={r"/*": {"origins": [
                                         "http://127.0.0.1:5501",
-                                         "https://locus-id-backend.onrender.com"]
+                                         "https://locus-id-frontend.vercel.app/"]
                                          }},
      supports_credentials=True,
      methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],
@@ -37,7 +37,6 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME"),
     "port": int(os.getenv("DB_PORT", 16047))
 }
-
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), 'student_faces')
 os.makedirs(FACE_PHOTOS_DIR, exist_ok=True)
 
