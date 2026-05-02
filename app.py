@@ -35,7 +35,7 @@ DB_CONFIG = {
     "user":     os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
-    "port":     os.getenv("DB_PORT")
+    "port": int(os.getenv("DB_PORT", 16047))
 }
 
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), 'student_faces')
