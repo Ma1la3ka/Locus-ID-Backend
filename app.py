@@ -6,7 +6,7 @@ try:
     print("SFace Model loaded and ready.")
 except Exception as e:
     print(f"Model pre-load warning: {e}")
-    
+
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS, cross_origin
 import cv2
@@ -57,7 +57,8 @@ DB_CONFIG = {
     "host":     os.getenv("DB_HOST"),
     "user":     os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME")
+    "database": os.getenv("DB_NAME"),
+    "port":    int(os.getenv("DB_PORT", 16047)),
 }
 
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), 'student_faces')
