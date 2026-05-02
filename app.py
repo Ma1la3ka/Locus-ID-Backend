@@ -22,7 +22,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5501"}},
+CORS(app, resources={r"/*": {"origins": [
+                                        "http://127.0.0.1:5501",
+                                         "https://locus-id-backend-production.up.railway.app"]
+                                         }},
      supports_credentials=True,
      methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
@@ -31,7 +34,8 @@ DB_CONFIG = {
     "host":     os.getenv("DB_HOST"),
     "user":     os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME")
+    "database": os.getenv("DB_NAME"),
+    "port":     os.getenv("DB_PORT")
 }
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), 'student_faces')
 os.makedirs(FACE_PHOTOS_DIR, exist_ok=True)
