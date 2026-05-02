@@ -4,10 +4,10 @@ import cv2
 import json
 import pymysql
 import os
-import threading
-import time
-import signal
-import sys
+# import threading
+# import time
+# import signal
+# import sys
 import io
 import csv
 import math
@@ -59,10 +59,10 @@ ALLOWED_FACULTIES = {
     ]
 }
 
-frame_lock      = threading.Lock()
-camera          = cv2.VideoCapture(0)
-latest_frame    = None
-face_is_aligned = False
+# frame_lock      = threading.Lock()
+# camera          = cv2.VideoCapture(0)
+# latest_frame    = None
+# face_is_aligned = False
 
 def preprocess_image(file_path):
     """Brighten + sharpen a saved JPEG so DeepFace has an easier time."""
@@ -133,25 +133,25 @@ def gen_frames():
         time.sleep(0.03)
 
 
-@app.route('/video_feed')
-def video_feed():
-    global camera
-    if camera is None or not camera.isOpened():
-        camera = cv2.VideoCapture(0)
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+# @app.route('/video_feed')
+# def video_feed():
+#     global camera
+#     if camera is None or not camera.isOpened():
+#         camera = cv2.VideoCapture(0)
+#     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-@app.route('/check_alignment')
-def check_alignment():
-    return jsonify({"aligned": face_is_aligned})
+# @app.route('/check_alignment')
+# def check_alignment():
+#     return jsonify({"aligned": face_is_aligned})
 
 
-@app.route('/shutdown_camera', methods=['POST'])
-def shutdown_camera():
-    global camera
-    if camera and camera.isOpened():
-        camera.release()
-    return jsonify({"status": "camera_off"})
+# @app.route('/shutdown_camera', methods=['POST'])
+# def shutdown_camera():
+#     global camera
+#     if camera and camera.isOpened():
+#         camera.release()
+#     return jsonify({"status": "camera_off"})
 
 @app.route('/get_faculties', methods=['GET'])
 def get_faculties():
@@ -1063,16 +1063,16 @@ def resource_not_found(e):
     return jsonify(error=str(e)), 404
 
 
-def signal_handler(sig, frame):
-    global camera
-    if camera and camera.isOpened():
-        camera.release()
-    sys.exit(0)
+# def signal_handler(sig, frame):
+#     global camera
+#     if camera and camera.isOpened():
+#         camera.release()
+#     sys.exit(0)
 
 
-signal.signal(signal.SIGINT, signal_handler)
+# signal.signal(signal.SIGINT, signal_handler)
 
 if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
