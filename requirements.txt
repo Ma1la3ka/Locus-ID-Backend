@@ -4,7 +4,7 @@ flask-cors==4.0.1
 numpy==1.26.4
 opencv-python-headless==4.10.0.84
 pymysql==1.1.1
-scipy==1.13.1
+scipy==1.11.4
 Werkzeug==3.0.3
 gunicorn==22.0.0
 python-dotenv==1.0.1
