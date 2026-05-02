@@ -37,6 +37,7 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME"),
     "port":     os.getenv("DB_PORT")
 }
+
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), 'student_faces')
 os.makedirs(FACE_PHOTOS_DIR, exist_ok=True)
 
