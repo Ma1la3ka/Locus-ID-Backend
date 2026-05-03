@@ -3,11 +3,10 @@ import io
 import csv
 import math
 import re
-import threading
 import numpy as np
 import cv2
 import pymysql
-import mediapipe as mp
+
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS, cross_origin
@@ -222,8 +221,6 @@ def register_user():
         return jsonify({"status": "error", "message": f"Backend Error: {str(e)}"})
     finally:
         if db: db.close()
-
-
 @app.route("/register_with_face", methods=["POST", "OPTIONS"])
 def register_with_face():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -253,44 +250,30 @@ def register_with_face():
         if not face_file:
             return jsonify({"status": "error", "message": "Face image required."})
 
-        # Decode once — reuse for both face check and saving
         file_bytes = np.frombuffer(face_file.read(), np.uint8)
-        img        = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         if img is None:
             return jsonify({"status": "error", "message": "Could not decode face image."})
 
-        # ── Resize immediately to cap RAM usage ──────────
-        img = resize_for_storage(img)
-
-        # ── MediaPipe check on in-memory array (no disk read) ──
-        num_faces = count_faces(img)
-        if num_faces == 0:
-            return jsonify({
-                "status":  "error",
-                "message": "No face detected. Ensure good lighting and look directly at the camera."
-            })
-        if num_faces > 1:
-            return jsonify({
-                "status":  "error",
-                "message": f"Detected {num_faces} faces. Only you should be in frame."
-            })
-
-        # Duplicate check before touching disk
+        # Duplicate check
         db = pymysql.connect(**DB_CONFIG)
         with db.cursor() as c:
             c.execute("SELECT student_id FROM students WHERE student_id=%s", (user_id,))
             if c.fetchone():
                 return jsonify({"status": "error", "message": "Student ID already registered."})
 
-        # Save small image — no further processing needed
+        # Resize to 400px max to save disk space
+        h, w = img.shape[:2]
+        if max(h, w) > 400:
+            scale = 400 / max(h, w)
+            img = cv2.resize(img, (int(w*scale), int(h*scale)))
+
+        # Save photo — no face detection, no AI
         safe_id    = re.sub(r"[^a-zA-Z0-9_\-]", "_", user_id)
         photo_path = os.path.join(FACE_PHOTOS_DIR, f"{safe_id}.jpg")
         cv2.imwrite(photo_path, img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-        # Free the numpy array now that it's saved
         del img
 
-        # Insert into DB
         with db.cursor() as c:
             c.execute(
                 "INSERT INTO students (student_id,first_name,last_name,password,faculty,department,face_encoding,photo_path) "
@@ -299,7 +282,6 @@ def register_with_face():
             )
             db.commit()
 
-        print(f"[REG_FACE] ✅ {user_id} registered.")
         return jsonify({"status": "success", "message": f"Registration complete! Welcome, {f_name}."})
 
     except Exception as e:
@@ -369,7 +351,6 @@ def check_distance():
     finally:
         db.close()
 
-
 @app.route("/verify_face_attendance", methods=["POST", "OPTIONS"])
 def verify_face_attendance():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -382,27 +363,12 @@ def verify_face_attendance():
     except (ValueError, TypeError):
         return jsonify({"status": "error", "message": "Invalid coordinates."}), 400
 
-    face_file = request.files.get("face")
-    if not face_file:
-        return jsonify({"status": "error", "message": "No face image received."}), 400
-
-    # Decode live image + resize immediately to cap RAM
-    file_bytes = np.frombuffer(face_file.read(), np.uint8)
-    live_img   = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    if live_img is None:
-        return jsonify({"status": "error", "message": "Could not decode face image."}), 400
-    live_img = resize_for_storage(live_img)
-
-    # Quick face presence check on live image
-    if count_faces(live_img) == 0:
-        return jsonify({"status": "error", "message": "No face detected. Look directly at the camera."})
-
     db = None
     try:
         db = pymysql.connect(**DB_CONFIG)
         with db.cursor(pymysql.cursors.DictCursor) as c:
 
-            # A. Session + distance re-check
+            # Session + distance check
             c.execute("SELECT id,lat,lng FROM attendance_sessions WHERE course_code=%s AND status='Active'", (code,))
             session = c.fetchone()
             if not session:
@@ -412,50 +378,24 @@ def verify_face_attendance():
                 if dist > 150:
                     return jsonify({"status": "error", "message": f"Location check failed — {int(dist)}m away."})
 
-            # B. Duplicate check
+            # Duplicate check
             c.execute("SELECT id FROM attendance_records WHERE student_id=%s AND session_id=%s", (uid, session["id"]))
             if c.fetchone():
                 return jsonify({"status": "error", "message": "Attendance already marked for this session."})
 
-            # C. Get stored face path
-            c.execute("SELECT photo_path FROM students WHERE student_id=%s", (uid,))
-            row = c.fetchone()
-            if not row or not row["photo_path"] or row["photo_path"] == "no_photo_yet.jpg":
-                return jsonify({"status": "error", "message": "No face registered. Please re-register."})
-            registered_path = row["photo_path"]
-            if not os.path.exists(registered_path):
-                return jsonify({"status": "error", "message": "Stored face photo not found. Please re-register."})
-
-            # D. Histogram comparison — passes live image already in memory
-            try:
-                matched, score = compare_faces(registered_path, live_img)
-                print(f"[ATTEND] {uid} | matched={matched} | score={score:.1f}%")
-                if not matched:
-                    return jsonify({
-                        "status":  "face_mismatch",
-                        "message": f"Face does not match ({score:.1f}% similarity). Try better lighting."
-                    })
-            except Exception as face_err:
-                print(f"[FACE ERROR] {face_err}")
-                return jsonify({"status": "error", "message": "Face comparison error. Look directly at the camera."})
-            finally:
-                # Always free live image after comparison
-                del live_img
-
-            # E. Record attendance
+            # Record attendance — face check skipped (free tier RAM limit)
             c.execute(
                 "INSERT INTO attendance_records (student_id,session_id,course_code,timestamp) VALUES(%s,%s,%s,NOW())",
                 (uid, session["id"], code)
             )
             db.commit()
-            return jsonify({"status": "success", "message": f"Identity confirmed. Attendance marked for {code}!"})
+            return jsonify({"status": "success", "message": f"Attendance marked for {code}!"})
 
     except Exception as e:
         print(f"[VERIFY ERROR] {e}")
         return jsonify({"status": "error", "message": "Internal server error."}), 500
     finally:
         if db: db.close()
-
 #  SESSION ROUTES
 
 @app.route("/check_active_session", methods=["GET"])
