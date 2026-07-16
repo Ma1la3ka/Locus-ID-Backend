@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 import pymysql
 import threading
+import ssl
 
 
 from flask import Flask, request, jsonify, Response
@@ -43,6 +44,7 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
     "port":     int(os.getenv("DB_PORT", 16047)),
+    "ssl":      {"ssl": {}},
 }
 
 FACE_PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "student_faces")
